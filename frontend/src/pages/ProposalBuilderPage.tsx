@@ -365,7 +365,7 @@ function WizardContent() {
   }, [isSuccess, navigate]);
 
   return (
-    <div className="space-y-6">
+    <div className="-ml-4 space-y-6 p-4 lg:p-6">
       <h2 className="text-2xl font-bold">New Proposal</h2>
       <StepIndicator current={state.step} />
 

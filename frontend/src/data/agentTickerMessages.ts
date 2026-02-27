@@ -1,0 +1,17 @@
+export const AGENT_TICKER_MESSAGES = [
+  "[10:42 AM] Agent mapping unused parcels in Brooklyn District 4...",
+  "[10:42 AM] Cross-referencing DOB zoning laws...",
+  "[10:43 AM] Generating proposal draft for Lot 12, Block 456...",
+  "[10:43 AM] Analyzing community board meeting notes from CB12...",
+  "[10:44 AM] Calculating feasibility score: 84% approval probability...",
+  "[10:44 AM] Identifying affordable housing tier 2 opportunities...",
+  "[10:45 AM] Agent mapping high-opportunity zones in Queens...",
+  "[10:45 AM] Cross-referencing infrastructure age data...",
+  "[10:46 AM] Drafting environmental impact section...",
+  "[10:46 AM] Optimizing for eco-friendly zoning grants...",
+  "[10:47 AM] Validating against historical approval rates...",
+  "[10:47 AM] Agent completing proposal for Harlem parcel...",
+  "[10:48 AM] Syncing with DOB permit database...",
+  "[10:48 AM] Generating financial projections (10-year)...",
+  "[10:49 AM] Mapping transit accessibility scores...",
+];

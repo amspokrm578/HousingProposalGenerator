@@ -51,6 +51,34 @@ class DemographicProfileSerializer(serializers.ModelSerializer):
         ]
 
 
+class NeighborhoodMapDataSerializer(serializers.Serializer):
+    """Enriched neighborhood data for the opportunity map layers."""
+
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+    borough_name = serializers.CharField()
+    borough_code = serializers.CharField()
+    latitude = serializers.DecimalField(max_digits=9, decimal_places=6)
+    longitude = serializers.DecimalField(max_digits=9, decimal_places=6)
+    area_sq_miles = serializers.DecimalField(max_digits=7, decimal_places=3)
+    proposal_count = serializers.IntegerField()
+    # Zoning layers
+    zoning_has_residential = serializers.BooleanField()
+    zoning_has_commercial = serializers.BooleanField()
+    zoning_has_mixed = serializers.BooleanField()
+    zoning_codes = serializers.ListField(child=serializers.CharField())
+    # Approval rate: approved / (approved + rejected) for this neighborhood's proposals
+    approval_rate_pct = serializers.FloatField(allow_null=True)
+    # Demand score: 0-100 from vacancy, rent, population growth, transit
+    demand_score = serializers.FloatField()
+    # Infrastructure proxy: transit_score (0-100), used as "accessibility" proxy for infra
+    infrastructure_score = serializers.FloatField(allow_null=True)
+    # Market data for tooltip
+    median_sale_price = serializers.DecimalField(max_digits=14, decimal_places=2, allow_null=True)
+    median_rent = serializers.DecimalField(max_digits=10, decimal_places=2, allow_null=True)
+    vacancy_rate_pct = serializers.DecimalField(max_digits=5, decimal_places=2, allow_null=True)
+
+
 class NeighborhoodListSerializer(serializers.ModelSerializer):
     borough_name = serializers.CharField(source="borough.name", read_only=True)
     borough_code = serializers.CharField(source="borough.code", read_only=True)

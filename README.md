@@ -27,7 +27,22 @@ React (Vite :5173) --> Django REST API (:8000) --> SQL Server (:1433)
 
 ## Quick Start
 
-### 1. Start Infrastructure
+### 1. Backend Setup (SQLite — no Docker required)
+
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip3 install -r requirements.txt
+
+python manage.py migrate
+python manage.py seed_nyc_data    # Seed NYC neighborhoods, zoning, market & demographic data
+python manage.py runserver
+```
+
+By default, the app uses **SQLite** for local development (no SQL Server or unixODBC needed). To use SQL Server instead, set `USE_MSSQL=1` and run `deploy_sql` after migrations.
+
+### 2. Optional: SQL Server (Docker)
 
 ```bash
 docker compose up -d sqlserver redis
@@ -41,19 +56,7 @@ docker exec -it djangotsproj-sqlserver-1 \
   -Q "CREATE DATABASE nyc_housing"
 ```
 
-### 2. Backend Setup
-
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-python manage.py migrate
-python manage.py deploy_sql       # Deploy stored procedures, views, functions, triggers
-python manage.py seed_nyc_data    # Seed NYC neighborhoods, zoning, market & demographic data
-python manage.py runserver
-```
+Set `USE_MSSQL=1` and run `deploy_sql` before seeding.
 
 ### 3. Frontend Setup
 

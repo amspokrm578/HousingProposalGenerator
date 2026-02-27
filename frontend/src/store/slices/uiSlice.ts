@@ -1,6 +1,8 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type { RootState } from "../store";
 
+export type ThemeMode = "light" | "dark";
+
 interface UiState {
   sidebarOpen: boolean;
   filterBorough: string;
@@ -8,15 +10,23 @@ interface UiState {
   sortField: string;
   sortDirection: "asc" | "desc";
   searchQuery: string;
+  theme: ThemeMode;
 }
 
+const storedTheme = (): ThemeMode => {
+  if (typeof window === "undefined") return "dark";
+  const t = localStorage.getItem("theme") as ThemeMode | null;
+  return t === "dark" || t === "light" ? t : "dark";
+};
+
 const initialState: UiState = {
-  sidebarOpen: true,
+  sidebarOpen: false,
   filterBorough: "",
   filterStatus: "",
   sortField: "-updated_at",
   sortDirection: "desc",
   searchQuery: "",
+  theme: storedTheme(),
 };
 
 const uiSlice = createSlice({
@@ -25,6 +35,9 @@ const uiSlice = createSlice({
   reducers: {
     toggleSidebar(state) {
       state.sidebarOpen = !state.sidebarOpen;
+    },
+    closeSidebar(state) {
+      state.sidebarOpen = false;
     },
     setFilterBorough(state, action: PayloadAction<string>) {
       state.filterBorough = action.payload;
@@ -41,6 +54,14 @@ const uiSlice = createSlice({
     setSearchQuery(state, action: PayloadAction<string>) {
       state.searchQuery = action.payload;
     },
+    setTheme(state, action: PayloadAction<ThemeMode>) {
+      state.theme = action.payload;
+      if (typeof window !== "undefined") localStorage.setItem("theme", action.payload);
+    },
+    toggleTheme(state) {
+      state.theme = state.theme === "dark" ? "light" : "dark";
+      if (typeof window !== "undefined") localStorage.setItem("theme", state.theme);
+    },
     resetFilters() {
       return initialState;
     },
@@ -49,11 +70,14 @@ const uiSlice = createSlice({
 
 export const {
   toggleSidebar,
+  closeSidebar,
   setFilterBorough,
   setFilterStatus,
   setSortField,
   setSortDirection,
   setSearchQuery,
+  setTheme,
+  toggleTheme,
   resetFilters,
 } = uiSlice.actions;
 

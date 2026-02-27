@@ -1,1 +1,41 @@
 @import "tailwindcss";
+
+@theme {
+  --color-glass-bg: rgb(255 255 255 / 0.08);
+  --color-glass-border: rgb(255 255 255 / 0.12);
+  --color-glass-bg-dark: rgb(15 23 42 / 0.7);
+  --color-glass-border-dark: rgb(148 163 184 / 0.15);
+}
+
+/* Glassmorphism base */
+.glass {
+  @apply backdrop-blur-xl border border-white/10 bg-white/5;
+}
+
+.glass-dark {
+  @apply backdrop-blur-xl border border-slate-500/20 bg-slate-900/70;
+}
+
+/* Theme-aware body */
+body.dark {
+  @apply bg-slate-950 text-slate-100;
+}
+
+body.light {
+  @apply bg-slate-50 text-slate-900;
+}
+
+/* MapLibre overrides */
+.maplibregl-map {
+  font-family: inherit;
+}
+
+/* Skeleton pulse animation */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+.skeleton-pulse {
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}

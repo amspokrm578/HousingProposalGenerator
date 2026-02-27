@@ -3,6 +3,7 @@ import type {
   Borough,
   DashboardSummary,
   NeighborhoodDetail,
+  NeighborhoodMapData,
   NeighborhoodRanking,
   NeighborhoodSummary,
   PaginatedResponse,
@@ -12,7 +13,7 @@ import type {
 } from "../../types/models";
 
 const baseQuery = fetchBaseQuery({
-  baseUrl: "http://localhost:8000/api/",
+  baseUrl: "/api/",
   prepareHeaders: (headers) => {
     const token = localStorage.getItem("authToken");
     if (token) {
@@ -60,6 +61,11 @@ export const apiSlice = createApi({
     getNeighborhood: builder.query<NeighborhoodDetail, number>({
       query: (id) => `neighborhoods/${id}/`,
       providesTags: (_result, _err, id) => [{ type: "Neighborhood", id }],
+    }),
+
+    getNeighborhoodMapData: builder.query<NeighborhoodMapData[], void>({
+      query: () => "neighborhoods/map_data/",
+      providesTags: ["Neighborhood", "Analytics"],
     }),
 
     // --- Proposals ---
@@ -167,6 +173,7 @@ export const {
   useGetBoroughsQuery,
   useGetNeighborhoodsQuery,
   useGetNeighborhoodQuery,
+  useGetNeighborhoodMapDataQuery,
   useGetProposalsQuery,
   useGetProposalQuery,
   useCreateProposalMutation,

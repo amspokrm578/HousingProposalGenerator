@@ -43,6 +43,27 @@ export interface DemographicEntry {
   transit_score: string;
 }
 
+export interface NeighborhoodMapData {
+  id: number;
+  name: string;
+  borough_name: string;
+  borough_code: string;
+  latitude: string;
+  longitude: string;
+  area_sq_miles: string;
+  proposal_count: number;
+  zoning_has_residential: boolean;
+  zoning_has_commercial: boolean;
+  zoning_has_mixed: boolean;
+  zoning_codes: string[];
+  approval_rate_pct: number | null;
+  demand_score: number;
+  infrastructure_score: number | null;
+  median_sale_price: string | null;
+  median_rent: string | null;
+  vacancy_rate_pct: string | null;
+}
+
 export interface NeighborhoodDetail extends NeighborhoodSummary {
   borough: Borough;
   zoning_districts: ZoningDistrict[];

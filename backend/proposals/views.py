@@ -8,11 +8,14 @@ from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnl
 from rest_framework.response import Response
 
 from .filters import NeighborhoodFilter, ProposalFilter
+from django.db.models import Count, Q
 from .models import (
     Borough,
+    DemographicProfile,
     MarketData,
     Neighborhood,
     Proposal,
+    ZoningDistrict,
 )
 from .permissions import IsProposalOwnerOrReadOnly
 from .serializers import (
@@ -20,6 +23,7 @@ from .serializers import (
     MarketDataSerializer,
     NeighborhoodDetailSerializer,
     NeighborhoodListSerializer,
+    NeighborhoodMapDataSerializer,
     ProposalCreateUpdateSerializer,
     ProposalDetailSerializer,
     ProposalListSerializer,
@@ -63,6 +67,88 @@ class NeighborhoodViewSet(viewsets.ReadOnlyModelViewSet):
         neighborhood = self.get_object()
         qs = neighborhood.market_data.all()
         serializer = MarketDataSerializer(qs, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=["get"], url_path="map-data")
+    @method_decorator(cache_page(60 * 10))
+    def map_data(self, request):
+        """Enriched neighborhood data for the opportunity map (zoning, approval, demand, infra)."""
+        neighborhoods = (
+            Neighborhood.objects.select_related("borough")
+            .prefetch_related(
+                "zoning_districts",
+                "market_data",
+                "demographics",
+            )
+            .annotate(proposal_count=Count("proposals"))
+        )
+        approved_count = Count(
+            "proposals", filter=Q(proposals__status=Proposal.Status.APPROVED)
+        )
+        rejected_count = Count(
+            "proposals", filter=Q(proposals__status=Proposal.Status.REJECTED)
+        )
+        neighborhoods = neighborhoods.annotate(
+            _approved=approved_count, _rejected=rejected_count
+        )
+
+        result = []
+        for n in neighborhoods:
+            zoning = list(n.zoning_districts.values_list("category", flat=True))
+            zoning_has_residential = "residential" in zoning
+            zoning_has_commercial = "commercial" in zoning
+            zoning_has_mixed = "mixed" in zoning
+            zoning_codes = list(n.zoning_districts.values_list("code", flat=True))
+
+            total_decided = n._approved + n._rejected
+            approval_rate_pct = (
+                (float(n._approved) / total_decided * 100) if total_decided > 0 else None
+            )
+
+            # Latest market + demo for demand/infra
+            latest_market = n.market_data.order_by("-period").first()
+            latest_demo = n.demographics.order_by("-year").first()
+
+            vacancy = float(latest_market.vacancy_rate_pct) if latest_market else 5.0
+            rent = float(latest_market.median_rent) if latest_market else 2000
+            growth = float(latest_demo.population_growth_pct) if latest_demo else 0
+            transit = float(latest_demo.transit_score) if latest_demo else 50
+            # Demand: low vacancy + high rent + growth + transit = high score
+            demand_score = min(
+                100,
+                max(
+                    0,
+                    (100 - vacancy * 8)
+                    + (min(rent / 100, 30))
+                    + (growth * 5)
+                    + (transit * 0.3),
+                ),
+            )
+
+            result.append(
+                {
+                    "id": n.id,
+                    "name": n.name,
+                    "borough_name": n.borough.name,
+                    "borough_code": n.borough.code,
+                    "latitude": n.latitude,
+                    "longitude": n.longitude,
+                    "area_sq_miles": n.area_sq_miles,
+                    "proposal_count": n.proposal_count,
+                    "zoning_has_residential": zoning_has_residential,
+                    "zoning_has_commercial": zoning_has_commercial,
+                    "zoning_has_mixed": zoning_has_mixed,
+                    "zoning_codes": zoning_codes[:5],
+                    "approval_rate_pct": approval_rate_pct,
+                    "demand_score": round(demand_score, 1),
+                    "infrastructure_score": round(transit, 1) if latest_demo else None,
+                    "median_sale_price": latest_market.median_sale_price if latest_market else None,
+                    "median_rent": latest_market.median_rent if latest_market else None,
+                    "vacancy_rate_pct": latest_market.vacancy_rate_pct if latest_market else None,
+                }
+            )
+
+        serializer = NeighborhoodMapDataSerializer(result, many=True)
         return Response(serializer.data)
 
 
