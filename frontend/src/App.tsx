@@ -9,6 +9,7 @@ import NeighborhoodsPage from "./pages/NeighborhoodsPage";
 import ProposalsPage from "./pages/ProposalsPage";
 import ProposalDetailPage from "./pages/ProposalDetailPage";
 import ProposalBuilderPage from "./pages/ProposalBuilderPage";
+import SelfImprovementLoopPage from "./pages/SelfImprovementLoopPage";
 
 export default function App() {
   return (
@@ -24,6 +25,7 @@ export default function App() {
           <Route path="/proposals" element={<ProposalsPage />} />
           <Route path="/proposals/new" element={<ProposalBuilderPage />} />
           <Route path="/proposals/:id" element={<ProposalDetailPage />} />
+          <Route path="/pdo/loop" element={<SelfImprovementLoopPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

@@ -1,10 +1,7 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import type {
   Borough,
-  DashboardSummary,
   NeighborhoodDetail,
-  NeighborhoodMapData,
-  NeighborhoodRanking,
   NeighborhoodSummary,
   PaginatedResponse,
   ProposalCreatePayload,
@@ -14,7 +11,7 @@ import type {
 
 const baseQuery = fetchBaseQuery({
   baseUrl: "/api/",
-  prepareHeaders: (headers) => {
+  prepareHeaders: (headers: Headers) => {
     const token = localStorage.getItem("authToken");
     if (token) {
       headers.set("Authorization", `Token ${token}`);
@@ -27,29 +24,36 @@ export const apiSlice = createApi({
   reducerPath: "api",
   baseQuery,
   tagTypes: ["Proposal", "Neighborhood", "Borough", "Analytics"],
-  endpoints: (builder) => ({
+  endpoints: (builder: any) => ({
+    // --- Auth / Accounts ---
+    getCurrentUser: builder.query({
+      query: () => "accounts/me/",
+    }),
     // --- Boroughs ---
-    getBoroughs: builder.query<Borough[], void>({
+    getBoroughs: builder.query({
       query: () => "boroughs/?format=json",
       transformResponse: (res: PaginatedResponse<Borough>) => res.results,
       providesTags: ["Borough"],
     }),
 
     // --- Neighborhoods ---
-    getNeighborhoods: builder.query<
-      PaginatedResponse<NeighborhoodSummary>,
-      { borough?: string; search?: string; page?: number }
-    >({
-      query: ({ borough, search, page = 1 }) => {
+    getNeighborhoods: builder.query({
+      query: ({
+        borough,
+        search,
+        page = 1,
+      }: { borough?: string; search?: string; page?: number }) => {
         const params = new URLSearchParams({ page: String(page) });
         if (borough) params.set("borough", borough);
         if (search) params.set("search", search);
         return `neighborhoods/?${params.toString()}`;
       },
-      providesTags: (result) =>
+      providesTags: (
+        result: PaginatedResponse<NeighborhoodSummary> | undefined
+      ) =>
         result
           ? [
-              ...result.results.map(({ id }) => ({
+              ...result.results.map(({ id }: { id: number }) => ({
                 type: "Neighborhood" as const,
                 id,
               })),
@@ -58,28 +62,33 @@ export const apiSlice = createApi({
           : [{ type: "Neighborhood", id: "LIST" }],
     }),
 
-    getNeighborhood: builder.query<NeighborhoodDetail, number>({
-      query: (id) => `neighborhoods/${id}/`,
-      providesTags: (_result, _err, id) => [{ type: "Neighborhood", id }],
+    getNeighborhood: builder.query({
+      query: (id: number) => `neighborhoods/${id}/`,
+      providesTags: (_result: NeighborhoodDetail, _err: unknown, id: number) => [
+        { type: "Neighborhood", id },
+      ],
     }),
 
-    getNeighborhoodMapData: builder.query<NeighborhoodMapData[], void>({
+    getNeighborhoodMapData: builder.query({
       query: () => "neighborhoods/map_data/",
       providesTags: ["Neighborhood", "Analytics"],
     }),
 
     // --- Proposals ---
-    getProposals: builder.query<
-      PaginatedResponse<ProposalSummary>,
-      {
+    getProposals: builder.query({
+      query: ({
+        status,
+        borough,
+        search,
+        ordering,
+        page = 1,
+      }: {
         status?: string;
         borough?: string;
         search?: string;
         ordering?: string;
         page?: number;
-      }
-    >({
-      query: ({ status, borough, search, ordering, page = 1 }) => {
+      }) => {
         const params = new URLSearchParams({ page: String(page) });
         if (status) params.set("status", status);
         if (borough) params.set("borough", borough);
@@ -87,7 +96,7 @@ export const apiSlice = createApi({
         if (ordering) params.set("ordering", ordering);
         return `proposals/?${params.toString()}`;
       },
-      providesTags: (result) =>
+      providesTags: (result: PaginatedResponse<ProposalSummary> | undefined) =>
         result
           ? [
               ...result.results.map(({ id }) => ({
@@ -99,13 +108,15 @@ export const apiSlice = createApi({
           : [{ type: "Proposal", id: "LIST" }],
     }),
 
-    getProposal: builder.query<ProposalDetail, number>({
-      query: (id) => `proposals/${id}/`,
-      providesTags: (_result, _err, id) => [{ type: "Proposal", id }],
+    getProposal: builder.query({
+      query: (id: number) => `proposals/${id}/`,
+      providesTags: (_result: ProposalDetail, _err: unknown, id: number) => [
+        { type: "Proposal", id },
+      ],
     }),
 
-    createProposal: builder.mutation<ProposalDetail, ProposalCreatePayload>({
-      query: (body) => ({
+    createProposal: builder.mutation({
+      query: (body: ProposalCreatePayload) => ({
         url: "proposals/",
         method: "POST",
         body,
@@ -113,63 +124,82 @@ export const apiSlice = createApi({
       invalidatesTags: [{ type: "Proposal", id: "LIST" }],
     }),
 
-    updateProposal: builder.mutation<
-      ProposalDetail,
-      { id: number; body: Partial<ProposalCreatePayload> }
-    >({
-      query: ({ id, body }) => ({
+    updateProposal: builder.mutation({
+      query: ({
+        id,
+        body,
+      }: { id: number; body: Partial<ProposalCreatePayload> }) => ({
         url: `proposals/${id}/`,
         method: "PATCH",
         body,
       }),
-      invalidatesTags: (_result, _err, { id }) => [
+      invalidatesTags: (_result: ProposalDetail, _err: unknown, { id }: { id: number }) => [
         { type: "Proposal", id },
         { type: "Proposal", id: "LIST" },
       ],
     }),
 
-    deleteProposal: builder.mutation<void, number>({
-      query: (id) => ({
+    deleteProposal: builder.mutation({
+      query: (id: number) => ({
         url: `proposals/${id}/`,
         method: "DELETE",
       }),
       invalidatesTags: [{ type: "Proposal", id: "LIST" }],
     }),
 
-    calculateScore: builder.mutation<{ detail: string }, number>({
-      query: (id) => ({
+    calculateScore: builder.mutation({
+      query: (id: number) => ({
         url: `proposals/${id}/calculate_score/`,
         method: "POST",
       }),
-      invalidatesTags: (_result, _err, id) => [{ type: "Proposal", id }],
+      invalidatesTags: (_result: { detail: string }, _err: unknown, id: number) => [
+        { type: "Proposal", id },
+      ],
     }),
 
-    generateProjections: builder.mutation<
-      { detail: string },
-      { id: number; years?: number }
-    >({
-      query: ({ id, years = 10 }) => ({
+    generateProjections: builder.mutation({
+      query: ({ id, years = 10 }: { id: number; years?: number }) => ({
         url: `proposals/${id}/generate_projections/`,
         method: "POST",
         body: { years },
       }),
-      invalidatesTags: (_result, _err, { id }) => [{ type: "Proposal", id }],
+      invalidatesTags: (
+        _result: { detail: string },
+        _err: unknown,
+        { id }: { id: number }
+      ) => [{ type: "Proposal", id }],
     }),
 
     // --- Analytics ---
-    getNeighborhoodRankings: builder.query<NeighborhoodRanking[], void>({
+    getNeighborhoodRankings: builder.query({
       query: () => "analytics/rankings/",
       providesTags: ["Analytics"],
     }),
 
-    getDashboardSummary: builder.query<DashboardSummary[], void>({
+    getDashboardSummary: builder.query({
       query: () => "analytics/dashboard/",
       providesTags: ["Analytics"],
+    }),
+
+    // --- Green-Tape Agent Pipeline ---
+    runGreenTapePipeline: builder.mutation({
+      query: (body: {
+        neighborhood_id: number;
+        lot_size_sqft: number;
+        user_goal: string;
+        additional_notes?: string;
+        max_iterations?: number;
+      }) => ({
+        url: "proposals/green-tape-run/",
+        method: "POST",
+        body,
+      }),
     }),
   }),
 });
 
 export const {
+  useGetCurrentUserQuery,
   useGetBoroughsQuery,
   useGetNeighborhoodsQuery,
   useGetNeighborhoodQuery,
@@ -183,4 +213,5 @@ export const {
   useGenerateProjectionsMutation,
   useGetNeighborhoodRankingsQuery,
   useGetDashboardSummaryQuery,
+  useRunGreenTapePipelineMutation,
 } = apiSlice;

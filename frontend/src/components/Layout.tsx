@@ -1,10 +1,11 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { useEffect, useMemo } from "react";
 import { useAppDispatch, useAppSelector } from "../store/store";
 import { selectUi, toggleSidebar, closeSidebar, toggleTheme } from "../store/slices/uiSlice";
-import { useEffect } from "react";
+import { useGetCurrentUserQuery } from "../store/api/apiSlice";
 
-const NAV_ITEMS = [
+const BASE_NAV_ITEMS = [
   { path: "/", label: "Home" },
   { path: "/map", label: "Opportunity Map" },
   { path: "/workspace", label: "Agent Workspace" },
@@ -17,6 +18,19 @@ export default function Layout() {
   const { sidebarOpen, theme } = useAppSelector(selectUi);
   const dispatch = useAppDispatch();
   const location = useLocation();
+  const hasToken = typeof window !== "undefined" && !!localStorage.getItem("authToken");
+  const { data: currentUser } = useGetCurrentUserQuery(undefined, {
+    skip: !hasToken,
+  });
+  const isPDO = currentUser?.is_pdo ?? false;
+
+  const navItems = useMemo(() => {
+    const items = [...BASE_NAV_ITEMS];
+    if (isPDO) {
+      items.splice(4, 0, { path: "/pdo/loop", label: "Green-Tape Loop" });
+    }
+    return items;
+  }, [isPDO]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -73,7 +87,7 @@ export default function Layout() {
 
         {/* Desktop nav bar - full viewport */}
         <nav className="ml-8 hidden flex-1 gap-1 lg:flex">
-          {NAV_ITEMS.map(({ path, label }) => {
+          {navItems.map(({ path, label }) => {
             const active = location.pathname === path;
             return (
               <Link
@@ -150,7 +164,7 @@ export default function Layout() {
             }`}
           >
             <nav className="flex flex-col gap-1 px-3">
-              {NAV_ITEMS.map(({ path, label }) => {
+              {navItems.map(({ path, label }) => {
                 const active = location.pathname === path;
                 return (
                   <Link

@@ -12,6 +12,7 @@ from .models import (
     ProposalUnitMix,
     ZoningDistrict,
 )
+from .agents import run_green_tape_pipeline
 
 User = get_user_model()
 
@@ -220,3 +221,33 @@ class ProposalDetailSerializer(serializers.ModelSerializer):
             "created_at", "updated_at",
             "unit_mix", "financial_projections", "status_history",
         ]
+
+
+class GreenTapeRequestSerializer(serializers.Serializer):
+    """
+    Input payload for running the Green-Tape pipeline.
+
+    This is intentionally decoupled from the Proposal model so that users can
+    experiment with scenarios before committing to a saved proposal.
+    """
+
+    neighborhood_id = serializers.IntegerField()
+    lot_size_sqft = serializers.FloatField(min_value=100.0)
+    user_goal = serializers.CharField(max_length=1000)
+    additional_notes = serializers.CharField(
+        max_length=2000, required=False, allow_blank=True
+    )
+    max_iterations = serializers.IntegerField(
+        min_value=1, max_value=3, required=False, default=1
+    )
+
+
+class GreenTapeResponseSerializer(serializers.Serializer):
+    """
+    Serialized view of the multi-step pipeline suitable for the frontend.
+    """
+
+    context = serializers.DictField()
+    draft = serializers.DictField()
+    critic = serializers.DictField()
+    optimizer = serializers.DictField()

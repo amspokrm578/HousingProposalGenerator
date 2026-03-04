@@ -2,13 +2,15 @@ from django.db.models import Count, Subquery, OuterRef, DecimalField, F, Window
 from django.db.models.functions import Rank
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
-from rest_framework import viewsets, status
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 
-from .filters import NeighborhoodFilter, ProposalFilter
 from django.db.models import Count, Q
+
+from .agents import run_green_tape_pipeline
+from .filters import NeighborhoodFilter, ProposalFilter
 from .models import (
     Borough,
     DemographicProfile,
@@ -20,6 +22,8 @@ from .models import (
 from .permissions import IsProposalOwnerOrReadOnly
 from .serializers import (
     BoroughSerializer,
+    GreenTapeRequestSerializer,
+    GreenTapeResponseSerializer,
     MarketDataSerializer,
     NeighborhoodDetailSerializer,
     NeighborhoodListSerializer,
@@ -188,6 +192,46 @@ class ProposalViewSet(viewsets.ModelViewSet):
         if self.action in ("create", "update", "partial_update"):
             return ProposalCreateUpdateSerializer
         return ProposalListSerializer
+
+    @action(
+        detail=False,
+        methods=["post"],
+        permission_classes=[IsAuthenticated],
+        url_path="green-tape-run",
+    )
+    def green_tape_run(self, request):
+        """
+        Run the Green-Tape multi-step agent pipeline.
+
+        This endpoint does not persist a Proposal record; instead it returns
+        a fully evaluated and optimized draft so that PDO-focused users can
+        iterate on concepts before committing them.
+        """
+
+        serializer = GreenTapeRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        try:
+            neighborhood = Neighborhood.objects.select_related("borough").get(
+                pk=data["neighborhood_id"]
+            )
+        except Neighborhood.DoesNotExist:
+            return Response(
+                {"detail": "Neighborhood not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        pipeline_result = run_green_tape_pipeline(
+            neighborhood=neighborhood,
+            lot_size_sqft=data["lot_size_sqft"],
+            user_goal=data["user_goal"],
+            additional_notes=data.get("additional_notes", ""),
+            max_iterations=data.get("max_iterations", 1),
+        )
+
+        response_serializer = GreenTapeResponseSerializer(pipeline_result)
+        return Response(response_serializer.data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated, IsProposalOwnerOrReadOnly])
     def calculate_score(self, request, pk=None):

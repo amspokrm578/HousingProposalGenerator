@@ -168,6 +168,57 @@ export interface DashboardSummary {
   total_projected_revenue: string;
 }
 
+export interface CurrentUser {
+  id: number;
+  username: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  role: "standard" | "pdo";
+  is_pdo: boolean;
+}
+
+export interface GreenTapeRunContext {
+  neighborhood_id: number;
+  neighborhood_name: string;
+  borough_code: string;
+  borough_name: string;
+  lot_size_sqft: number;
+  user_goal: string;
+  additional_notes: string;
+}
+
+export interface GreenTapeCriticParsed {
+  summary: string;
+  displacement_risk: string;
+  affordability_assessment: string;
+  local_business_impact: string;
+  overall_score: number;
+  recommendations: string[];
+}
+
+export interface GreenTapeOptimizerStep {
+  iteration: number;
+  optimizer_prompt: string;
+  improved_draft: string;
+}
+
+export interface GreenTapeRunResult {
+  context: GreenTapeRunContext;
+  draft: {
+    text: string;
+    prompt: string;
+  };
+  critic: {
+    raw_text: unknown;
+    parsed: GreenTapeCriticParsed;
+  };
+  optimizer: {
+    final_draft: string;
+    steps: GreenTapeOptimizerStep[];
+  };
+}
+
 export interface PaginatedResponse<T> {
   count: number;
   next: string | null;

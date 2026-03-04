@@ -26,6 +26,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "django_celery_beat",
     # Local
+    "accounts",
     "proposals",
     "analytics",
 ]

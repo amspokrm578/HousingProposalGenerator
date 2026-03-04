@@ -8,3 +8,4 @@ celery>=5.4,<6
 django-celery-beat>=2.7,<3
 redis>=5.2,<6
 django-redis>=5.4,<6
+requests>=2.32,<3

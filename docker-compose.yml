@@ -19,6 +19,40 @@ services:
     volumes:
       - redis_data:/data
 
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: python manage.py runserver 0.0.0.0:8000
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+      OPENAI_MODEL: ${OPENAI_MODEL}
+      DATABASE_HOST: sqlserver
+      DATABASE_PORT: "1433"
+      DATABASE_NAME: nyc_housing
+      DATABASE_USER: sa
+      DATABASE_PASSWORD: "NYCHousing#2026!"
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - sqlserver
+      - redis
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+
+  frontend:
+    image: node:22-alpine
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - ./frontend:/app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+
   celery_worker:
     build:
       context: ./backend
