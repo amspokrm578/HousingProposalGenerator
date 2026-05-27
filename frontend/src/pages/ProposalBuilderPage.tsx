@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import {
   ProposalWizardProvider,
@@ -7,6 +7,7 @@ import {
 import {
   useGetBoroughsQuery,
   useGetNeighborhoodsQuery,
+  useGetNeighborhoodMapDataQuery,
 } from "../store/api/apiSlice";
 import { useDebounce } from "../hooks/useDebounce";
 import type { UnitMix } from "../types/models";
@@ -50,14 +51,30 @@ function StepIndicator({ current }: { current: number }) {
 
 function Step0Neighborhood() {
   const { state, dispatch } = useWizard();
+  const [searchParams] = useSearchParams();
   const [search, setSearch] = useState("");
-  const [borough, setBorough] = useState("");
+  const [borough, setBorough] = useState(searchParams.get("borough") ?? "");
   const debouncedSearch = useDebounce(search, 300);
   const { data: boroughs } = useGetBoroughsQuery();
   const { data: neighborhoods } = useGetNeighborhoodsQuery({
     search: debouncedSearch,
     borough,
   });
+  const { data: allNeighborhoods = [] } = useGetNeighborhoodMapDataQuery();
+
+  const parcelLat = parseFloat(searchParams.get("lat") ?? "");
+  const parcelLng = parseFloat(searchParams.get("lng") ?? "");
+
+  useEffect(() => {
+    if (!parcelLat || !parcelLng || !allNeighborhoods.length || state.neighborhoodId) return;
+    let bestId = allNeighborhoods[0].id;
+    let bestDist = Infinity;
+    for (const n of allNeighborhoods) {
+      const d = (parcelLat - parseFloat(n.latitude)) ** 2 + (parcelLng - parseFloat(n.longitude)) ** 2;
+      if (d < bestDist) { bestDist = d; bestId = n.id; }
+    }
+    dispatch({ type: "SET_NEIGHBORHOOD", id: bestId });
+  }, [allNeighborhoods, parcelLat, parcelLng, state.neighborhoodId, dispatch]);
 
   return (
     <div className="space-y-4">
@@ -190,6 +207,90 @@ function Step1Details() {
   );
 }
 
+interface UnitSpec {
+  unit_type: UnitMix["unit_type"];
+  pct: number;
+  avg_sqft: string;
+  projected_rent: string;
+}
+
+interface MixPreset {
+  id: string;
+  name: string;
+  description: string;
+  color: string;
+  units: UnitSpec[];
+}
+
+const MIX_PRESETS: MixPreset[] = [
+  {
+    id: "deeply-affordable",
+    name: "Deeply Affordable",
+    description: "40–60% AMI. CLT-ready, anti-displacement focus.",
+    color: "#22d3ee",
+    units: [
+      { unit_type: "studio", pct: 40, avg_sqft: "400", projected_rent: "900" },
+      { unit_type: "1br",    pct: 45, avg_sqft: "580", projected_rent: "1100" },
+      { unit_type: "2br",    pct: 15, avg_sqft: "820", projected_rent: "1400" },
+    ],
+  },
+  {
+    id: "family-centered",
+    name: "Family-Centered",
+    description: "Larger units for households with children.",
+    color: "#34d399",
+    units: [
+      { unit_type: "1br", pct: 20, avg_sqft: "620",  projected_rent: "1400" },
+      { unit_type: "2br", pct: 40, avg_sqft: "900",  projected_rent: "1800" },
+      { unit_type: "3br", pct: 30, avg_sqft: "1100", projected_rent: "2200" },
+      { unit_type: "4br", pct: 10, avg_sqft: "1300", projected_rent: "2600" },
+    ],
+  },
+  {
+    id: "mixed-income",
+    name: "Mixed Income",
+    description: "Blend of affordable and market-rate tiers.",
+    color: "#fbbf24",
+    units: [
+      { unit_type: "studio", pct: 20, avg_sqft: "450",  projected_rent: "1600" },
+      { unit_type: "1br",    pct: 30, avg_sqft: "650",  projected_rent: "2100" },
+      { unit_type: "2br",    pct: 30, avg_sqft: "900",  projected_rent: "2900" },
+      { unit_type: "3br",    pct: 20, avg_sqft: "1100", projected_rent: "3600" },
+    ],
+  },
+  {
+    id: "market-rate",
+    name: "Market Rate",
+    description: "Standard NYC market distribution.",
+    color: "#a78bfa",
+    units: [
+      { unit_type: "studio", pct: 35, avg_sqft: "450",  projected_rent: "2300" },
+      { unit_type: "1br",    pct: 35, avg_sqft: "650",  projected_rent: "3000" },
+      { unit_type: "2br",    pct: 20, avg_sqft: "900",  projected_rent: "3900" },
+      { unit_type: "3br",    pct: 10, avg_sqft: "1100", projected_rent: "4900" },
+    ],
+  },
+];
+
+function buildPresetMix(
+  preset: MixPreset,
+  totalUnits: number
+): Omit<UnitMix, "id">[] {
+  const counts = preset.units.map((s) =>
+    Math.round((s.pct / 100) * totalUnits)
+  );
+  const diff = totalUnits - counts.reduce((a, b) => a + b, 0);
+  if (diff !== 0) counts[0] = Math.max(1, counts[0] + diff);
+  return preset.units
+    .map((s, i) => ({
+      unit_type: s.unit_type,
+      count: counts[i],
+      avg_sqft: s.avg_sqft,
+      projected_rent: s.projected_rent,
+    }))
+    .filter((u) => u.count > 0);
+}
+
 const UNIT_TYPES: { value: UnitMix["unit_type"]; label: string }[] = [
   { value: "studio", label: "Studio" },
   { value: "1br", label: "1 Bedroom" },
@@ -221,6 +322,14 @@ function Step2UnitMix() {
     setRent("");
   };
 
+  const applyPreset = (preset: MixPreset) => {
+    if (state.totalUnits <= 0) return;
+    dispatch({
+      type: "SET_UNIT_MIX",
+      unitMix: buildPresetMix(preset, state.totalUnits),
+    });
+  };
+
   const unitTotal = state.unitMix.reduce((s, u) => s + u.count, 0);
 
   return (
@@ -230,6 +339,38 @@ function Step2UnitMix() {
         Total units: {state.totalUnits} | Assigned: {unitTotal} | Remaining:{" "}
         {state.totalUnits - unitTotal}
       </p>
+
+      {/* Preset suggestions */}
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Quick Presets
+          {state.totalUnits <= 0 && (
+            <span className="ml-2 font-normal normal-case text-slate-400">
+              — set total units in Step 1 first
+            </span>
+          )}
+        </p>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {MIX_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              onClick={() => applyPreset(preset)}
+              disabled={state.totalUnits <= 0}
+              className="group rounded-xl border border-slate-200 bg-white p-3 text-left transition-all hover:border-indigo-300 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <span
+                className="mb-2 block h-1 w-8 rounded-full"
+                style={{ backgroundColor: preset.color }}
+              />
+              <p className="text-xs font-semibold text-slate-800">{preset.name}</p>
+              <p className="mt-0.5 text-xs text-slate-500">{preset.description}</p>
+              <p className="mt-2 text-xs text-slate-400">
+                {preset.units.map((u) => `${u.pct}% ${u.unit_type}`).join(" · ")}
+              </p>
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* Add unit form */}
       <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4">
@@ -354,8 +495,17 @@ function Step3Review() {
 }
 
 function WizardContent() {
-  const { state, nextStep, prevStep, submit, isSuccess } = useWizard();
+  const { state, dispatch, nextStep, prevStep, submit, isSuccess } = useWizard();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    const lotSize = searchParams.get("lot_size");
+    const address = searchParams.get("address");
+    if (lotSize) dispatch({ type: "SET_FIELD", field: "lotSizeSqft", value: lotSize });
+    if (address) dispatch({ type: "SET_FIELD", field: "title", value: `New Proposal — ${address}` });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (isSuccess) {

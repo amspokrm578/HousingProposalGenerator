@@ -1,9 +1,9 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useAppDispatch, useAppSelector } from "../store/store";
 import { selectUi, toggleSidebar, closeSidebar, toggleTheme } from "../store/slices/uiSlice";
-import { useGetCurrentUserQuery } from "../store/api/apiSlice";
+import { apiSlice, useGetCurrentUserQuery, useLoginMutation } from "../store/api/apiSlice";
 
 const BASE_NAV_ITEMS = [
   { path: "/", label: "Home" },
@@ -18,19 +18,56 @@ export default function Layout() {
   const { sidebarOpen, theme } = useAppSelector(selectUi);
   const dispatch = useAppDispatch();
   const location = useLocation();
-  const hasToken = typeof window !== "undefined" && !!localStorage.getItem("authToken");
+  const [hasToken, setHasToken] = useState(() => !!localStorage.getItem("authToken"));
+  const [showLogin, setShowLogin] = useState(false);
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const loginRef = useRef<HTMLDivElement>(null);
+
+  const [login, { isLoading: loginLoading }] = useLoginMutation();
   const { data: currentUser } = useGetCurrentUserQuery(undefined, {
     skip: !hasToken,
   });
-  const isPDO = currentUser?.is_pdo ?? false;
 
+  useEffect(() => {
+    if (!showLogin) return;
+    function handleClick(e: MouseEvent) {
+      if (loginRef.current && !loginRef.current.contains(e.target as Node)) {
+        setShowLogin(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showLogin]);
+
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setLoginError("");
+    try {
+      const result = await login({ username: loginUsername, password: loginPassword }).unwrap();
+      localStorage.setItem("authToken", (result as { token: string }).token);
+      setHasToken(true);
+      setShowLogin(false);
+      setLoginUsername("");
+      setLoginPassword("");
+    } catch {
+      setLoginError("Invalid credentials");
+    }
+  }
+
+  function handleLogout() {
+    localStorage.removeItem("authToken");
+    setHasToken(false);
+    dispatch(apiSlice.util.resetApiState());
+  }
   const navItems = useMemo(() => {
     const items = [...BASE_NAV_ITEMS];
-    if (isPDO) {
+    if (hasToken) {
       items.splice(4, 0, { path: "/pdo/loop", label: "Green-Tape Loop" });
     }
     return items;
-  }, [isPDO]);
+  }, [hasToken]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -129,6 +166,93 @@ export default function Layout() {
             </svg>
           )}
         </button>
+
+        {/* Auth controls */}
+        {hasToken ? (
+          <div className="ml-2 flex items-center gap-2">
+            <span className={`text-sm ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`}>
+              {currentUser?.username}
+            </span>
+            <button
+              onClick={handleLogout}
+              className={`rounded-xl border px-3 py-1.5 text-sm font-medium transition-all hover:scale-105 ${
+                theme === "dark"
+                  ? "border-slate-600 text-slate-400 hover:bg-slate-800"
+                  : "border-slate-300 text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              Sign Out
+            </button>
+          </div>
+        ) : (
+          <div className="relative ml-2" ref={loginRef}>
+            <button
+              onClick={() => setShowLogin(!showLogin)}
+              className={`rounded-xl border px-3 py-1.5 text-sm font-medium transition-all hover:scale-105 ${
+                theme === "dark"
+                  ? "border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10"
+                  : "border-indigo-300 text-indigo-600 hover:bg-indigo-50"
+              }`}
+            >
+              Sign In
+            </button>
+            <AnimatePresence>
+              {showLogin && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -8, scale: 0.95 }}
+                  transition={{ duration: 0.15 }}
+                  className={`absolute right-0 top-full z-50 mt-2 w-64 rounded-xl border p-4 shadow-xl ${
+                    theme === "dark"
+                      ? "border-slate-700 bg-slate-900"
+                      : "border-slate-200 bg-white"
+                  }`}
+                >
+                  <form onSubmit={handleLogin} className="flex flex-col gap-3">
+                    <p className={`text-xs font-semibold uppercase tracking-wider ${theme === "dark" ? "text-slate-500" : "text-slate-400"}`}>
+                      Sign In
+                    </p>
+                    {loginError && (
+                      <p className="text-xs text-red-400">{loginError}</p>
+                    )}
+                    <input
+                      type="text"
+                      placeholder="Username"
+                      value={loginUsername}
+                      onChange={e => setLoginUsername(e.target.value)}
+                      autoComplete="username"
+                      className={`rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 ${
+                        theme === "dark"
+                          ? "border-slate-700 bg-slate-800 text-slate-100 placeholder-slate-500 focus:ring-cyan-500/30"
+                          : "border-slate-200 bg-slate-50 text-slate-900 placeholder-slate-400 focus:ring-indigo-300"
+                      }`}
+                    />
+                    <input
+                      type="password"
+                      placeholder="Password"
+                      value={loginPassword}
+                      onChange={e => setLoginPassword(e.target.value)}
+                      autoComplete="current-password"
+                      className={`rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 ${
+                        theme === "dark"
+                          ? "border-slate-700 bg-slate-800 text-slate-100 placeholder-slate-500 focus:ring-cyan-500/30"
+                          : "border-slate-200 bg-slate-50 text-slate-900 placeholder-slate-400 focus:ring-indigo-300"
+                      }`}
+                    />
+                    <button
+                      type="submit"
+                      disabled={loginLoading}
+                      className="rounded-lg bg-gradient-to-r from-indigo-500 to-cyan-500 px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                    >
+                      {loginLoading ? "Signing in…" : "Sign In"}
+                    </button>
+                  </form>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
       </header>
 
       {/* Mobile: backdrop overlay when sidebar is open */}

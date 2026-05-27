@@ -133,3 +133,10 @@ DjangoTSproj/
         ├── pages/           # Route pages (Dashboard, Neighborhoods, Proposals, Builder)
         └── types/           # TypeScript type definitions
 ```
+
+1. Click any parcel dot on /map → detail panel slides in
+2. "Start Proposal →" button at the bottom of the panel
+3. Click it → navigates to /proposals/new with lot size, address, and borough in the URL
+4. Step 0 borough dropdown is pre-selected to the parcel's borough, narrowing the neighbourhood list
+5. Pick a neighbourhood → Continue → Step 1 shows the title (New Proposal — 291 Cherry St) and lot size already filled in
+6. Complete unit mix → submit

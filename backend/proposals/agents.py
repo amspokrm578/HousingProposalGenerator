@@ -1,14 +1,12 @@
 """
 Green-Tape multi-step agent pipeline.
 
-This module encapsulates the Darwin-Gödel-inspired self-improvement loop:
+Two agents work together in a self-improvement loop:
 
-1. Draft Generation (Primary agent)
-2. Simulation/Evaluation via a "Community Board Simulator" critic
-3. Self-Correction / Optimization of the draft
-
-The prompts and calling patterns are tuned for OpenAI-style chat models but
-kept provider-neutral enough to work with any OpenAI-compatible endpoint.
+1. Draft Agent (Green-Tape) — generates the initial housing proposal
+2. Community Board Agent — reviews it against Everyday Peace indicators AND
+   real historical proposals from the borough (approved/rejected), then scores it
+3. Draft Agent revises in response; loop repeats for max_iterations rounds
 """
 
 from dataclasses import dataclass
@@ -80,10 +78,59 @@ class OptimizationResult:
     rationale: str
 
 
+def fetch_historical_context(neighborhood: Neighborhood) -> str:
+    """
+    Query approved and rejected proposals in the same borough and return a
+    formatted string for the community board critic to ground its review in
+    real historical outcomes.
+    """
+    from .models import Proposal  # lazy import — avoids circular at module load
+
+    approved = list(
+        Proposal.objects.filter(
+            neighborhood__borough=neighborhood.borough,
+            status="approved",
+        )
+        .select_related("neighborhood")
+        .prefetch_related("unit_mix")
+        .order_by("-feasibility_score")[:5]
+    )
+    rejected = list(
+        Proposal.objects.filter(
+            neighborhood__borough=neighborhood.borough,
+            status="rejected",
+        )
+        .select_related("neighborhood")
+        .prefetch_related("unit_mix")
+        .order_by("-updated_at")[:5]
+    )
+
+    if not approved and not rejected:
+        return ""
+
+    def _fmt(p) -> str:
+        unit_summary = ", ".join(
+            f"{u.count} {u.unit_type}" for u in p.unit_mix.all()
+        ) or "no unit mix recorded"
+        score = f"score: {p.feasibility_score}" if p.feasibility_score else "score: N/A"
+        return (
+            f'• "{p.title}" | {p.neighborhood.name}, {p.neighborhood.borough.code}'
+            f" | {p.total_units} units ({unit_summary}) | {score}"
+        )
+
+    lines = ["HISTORICAL BOROUGH PROPOSALS (use as grounding for your review):"]
+    if approved:
+        lines.append("\nAPPROVED proposals (what succeeded in this borough):")
+        lines.extend(_fmt(p) for p in approved)
+    if rejected:
+        lines.append("\nREJECTED proposals (lessons learned in this borough):")
+        lines.extend(_fmt(p) for p in rejected)
+
+    return "\n".join(lines)
+
+
 def build_generation_prompt(context: GreenTapeContext) -> str:
-    """
-    Construct the base prompt that strongly encodes Green-Tape's priorities.
-    """
+    """Construct the base prompt that strongly encodes Green-Tape's priorities."""
 
     n = context.neighborhood
     header = (
@@ -97,7 +144,6 @@ def build_generation_prompt(context: GreenTapeContext) -> str:
         f"- Borough: {n.borough.name}\n"
         f"- Approximate lot size: {context.lot_size_sqft:,.0f} sqft\n"
     )
-    # Enrich with cached NYC-style data if available
     site = context.site_context or {}
     zoning = site.get("zoning") or {}
     market = site.get("market") or {}
@@ -135,7 +181,7 @@ Draft a concise but detailed housing proposal that clearly explains:
 - Governance/ownership model (with emphasis on CLTs and permanent affordability).
 - Community benefits (e.g., open space, community facilities, local retail).
 - Anti-displacement commitments and enforcement mechanisms.
-- How the proposal advances a “safe, just, and thriving” neighborhood.
+- How the proposal advances a "safe, just, and thriving" neighborhood.
 
 Formatting and style requirements:
 - Use clear markdown headings and sub-headings for each major section.
@@ -150,9 +196,15 @@ Formatting and style requirements:
     )
 
 
-def build_critic_prompt(draft: str, context: GreenTapeContext) -> str:
+def build_critic_prompt(
+    draft: str, context: GreenTapeContext, historical_context: str = ""
+) -> str:
     """
-    Prompt for the Community Board Simulator critic.
+    Prompt for the Community Board Agent.
+
+    When historical_context is provided (approved/rejected proposals from the
+    same borough), it is injected before the draft so the critic can compare
+    the current proposal against real outcomes.
     """
 
     n = context.neighborhood
@@ -189,15 +241,16 @@ Response contract (CRITICAL):
 
     proposal_section = f"--- PROPOSAL DRAFT START ---\n{draft}\n--- PROPOSAL DRAFT END ---"
 
-    return "\n\n".join(
-        [
-            header,
-            f"Neighborhood: {n.name}, {n.borough.code}",
-            indicators,
-            instructions,
-            proposal_section,
-        ]
-    )
+    sections = [
+        header,
+        f"Neighborhood under review: {n.name}, {n.borough.code}",
+        indicators,
+    ]
+    if historical_context:
+        sections.append(historical_context)
+    sections.extend([instructions, proposal_section])
+
+    return "\n\n".join(sections)
 
 
 def build_optimizer_prompt(
@@ -205,9 +258,7 @@ def build_optimizer_prompt(
     feedback: CriticFeedback,
     context: GreenTapeContext,
 ) -> str:
-    """
-    Prompt that asks the primary agent to self-correct based on the critic.
-    """
+    """Prompt that asks the Draft Agent to self-correct based on the Community Board Agent's feedback."""
 
     header = (
         "You are Green-Tape revising your own proposal based on a rigorous "
@@ -246,9 +297,7 @@ Formatting and style requirements:
 
 
 def parse_critic_output(payload: Dict[str, Any]) -> CriticFeedback:
-    """
-    Parse the critic's JSON response into a strongly-typed object.
-    """
+    """Parse the Community Board Agent's JSON response into a typed object."""
 
     return CriticFeedback(
         summary=str(payload.get("summary", "")),
@@ -260,6 +309,46 @@ def parse_critic_output(payload: Dict[str, Any]) -> CriticFeedback:
     )
 
 
+def _fallback_critic(exc: Exception) -> CriticFeedback:
+    return CriticFeedback(
+        summary="Fallback critic: unable to reach LLM or parse JSON.",
+        displacement_risk="unknown",
+        affordability_assessment="unknown",
+        local_business_impact="unknown",
+        overall_score=50.0,
+        recommendations=[
+            "Increase share of deeply affordable units.",
+            "Center long-term residents with right-to-return policies.",
+            "Reserve ground-floor space for local small businesses and community uses.",
+        ],
+    )
+
+
+def _critic_to_dict(fb: CriticFeedback) -> Dict[str, Any]:
+    return {
+        "summary": fb.summary,
+        "displacement_risk": fb.displacement_risk,
+        "affordability_assessment": fb.affordability_assessment,
+        "local_business_impact": fb.local_business_impact,
+        "overall_score": fb.overall_score,
+        "recommendations": fb.recommendations,
+    }
+
+
+CRITIC_SYSTEM = (
+    "You simulate a New York City community board and advocacy coalition. "
+    "You are strict about displacement, affordability, and local business impact. "
+    "Always respond with a single valid JSON object that matches the requested schema."
+)
+
+OPTIMIZER_SYSTEM = (
+    "You are Green-Tape revising your own New York City housing proposal. "
+    "You must strictly follow the critic feedback and prioritize deeply affordable "
+    "units, community land trusts, and anti-displacement measures. Return only the "
+    "improved proposal text in markdown, with no extra commentary."
+)
+
+
 def run_green_tape_pipeline(
     *,
     neighborhood: Neighborhood,
@@ -269,9 +358,15 @@ def run_green_tape_pipeline(
     max_iterations: int = 1,
 ) -> Dict[str, Any]:
     """
-    High-level orchestration of the Green-Tape self-improvement loop.
+    Orchestrates the two-agent self-improvement loop.
 
-    Returns a dictionary that is easy to serialize back to the frontend.
+    Draft Agent generates an initial proposal; Community Board Agent scores it
+    against Everyday Peace indicators and real historical proposals from the
+    borough; Draft Agent revises; loop repeats max_iterations times, with a
+    final critic pass at the end.
+
+    Total LLM calls: 1 (initial draft) + 2*(max_iterations) (opt+critic per round)
+    + 1 (final critic) = 2*(max_iterations + 1).
     """
 
     context = GreenTapeContext(
@@ -282,7 +377,10 @@ def run_green_tape_pipeline(
         site_context=get_neighborhood_site_context(neighborhood),
     )
 
-    # Step 1: Draft generation
+    # Fetch historical context once — reused in every critic call this run
+    historical_context = fetch_historical_context(neighborhood)
+
+    # --- Step 1: Initial draft ---
     gen_prompt = build_generation_prompt(context)
     try:
         draft_resp = call_llm(
@@ -297,87 +395,55 @@ def run_green_tape_pipeline(
             temperature=0.25,
             max_tokens=2000,
         )
-        draft_text = draft_resp.text
+        current_draft = draft_resp.text
     except LLMConfigurationError:
-        # Helpful fallback for local dev when no key is configured.
-        draft_text = (
+        current_draft = (
             "[Green-Tape draft placeholder]\n\n"
             "LLM is not configured (no OPENAI_API_KEY / LLM_API_KEY). "
             "Configure an API key to enable real draft generation.\n\n"
             f"PROMPT SNIPPET:\n{gen_prompt[:800]}"
         )
-    draft_result = DraftResult(draft_text=draft_text, prompt_used=gen_prompt)
 
-    # Step 2: Critic evaluation
-    critic_prompt = build_critic_prompt(draft_result.draft_text, context)
-    try:
-        critic_json = call_llm_json(
-            critic_prompt,
-            system_prompt=(
-                "You simulate a New York City community board and advocacy "
-                "coalition. You are strict about displacement, affordability, "
-                "and local business impact. Always respond with a single valid "
-                "JSON object that matches the requested schema."
-            ),
-            temperature=0.1,
-            max_tokens=1200,
-        )
-        critic_feedback = parse_critic_output(critic_json)
-        critic_raw = critic_json
-    except (LLMConfigurationError, Exception) as exc:
-        # Fall back to a neutral critic if the LLM is not available or JSON parsing fails.
-        critic_feedback = CriticFeedback(
-            summary="Fallback critic: unable to reach LLM or parse JSON.",
-            displacement_risk="unknown",
-            affordability_assessment="unknown",
-            local_business_impact="unknown",
-            overall_score=50.0,
-            recommendations=[
-                "Increase share of deeply affordable units.",
-                "Center long-term residents with right-to-return policies.",
-                "Reserve ground-floor space for local small businesses and community uses.",
-            ],
-        )
-        critic_raw = {"error": str(exc)}
+    # --- Steps 2…N: [critic → optimizer] × max_iterations + final critic ---
+    iterations: List[Dict[str, Any]] = []
 
-    # Step 3: Self-correction / optimization
-    optimized_draft_text = draft_result.draft_text
-    optimization_steps: List[Dict[str, Any]] = []
-
-    for iteration in range(max_iterations):
-        opt_prompt = build_optimizer_prompt(
-            original_draft=optimized_draft_text,
-            feedback=critic_feedback,
-            context=context,
-        )
+    for round_num in range(max_iterations + 1):
+        # Community Board Agent evaluates the current draft
+        critic_prompt = build_critic_prompt(current_draft, context, historical_context)
         try:
-            opt_resp = call_llm(
-                opt_prompt,
-                system_prompt=(
-                    "You are Green-Tape revising your own New York City housing "
-                    "proposal. You must strictly follow the critic feedback and "
-                    "prioritize deeply affordable units, community land trusts, "
-                    "and anti-displacement measures. Return only the improved "
-                    "proposal text in markdown, with no extra commentary."
-                ),
-                temperature=0.25,
-                max_tokens=2000,
+            critic_json = call_llm_json(
+                critic_prompt,
+                system_prompt=CRITIC_SYSTEM,
+                temperature=0.1,
+                max_tokens=1200,
             )
-            improved_text = opt_resp.text
-        except LLMConfigurationError:
-            improved_text = (
-                "[Green-Tape optimizer placeholder]\n\n"
-                "LLM is not configured; returning previous draft unchanged.\n\n"
-                f"PROMPT SNIPPET:\n{opt_prompt[:800]}"
-            )
-        optimization_steps.append(
-            {
-                "iteration": iteration + 1,
-                "optimizer_prompt": opt_prompt,
-                "improved_draft": improved_text,
-            }
-        )
-        optimized_draft_text = improved_text
+            feedback = parse_critic_output(critic_json)
+        except Exception as exc:
+            feedback = _fallback_critic(exc)
+
+        iterations.append({
+            "round": round_num,
+            "draft": current_draft,
+            "critic": _critic_to_dict(feedback),
+        })
+
+        # If not the final round, Draft Agent self-corrects
+        if round_num < max_iterations:
+            opt_prompt = build_optimizer_prompt(current_draft, feedback, context)
+            try:
+                opt_resp = call_llm(
+                    opt_prompt,
+                    system_prompt=OPTIMIZER_SYSTEM,
+                    temperature=0.25,
+                    max_tokens=2000,
+                )
+                current_draft = opt_resp.text
+            except LLMConfigurationError:
+                current_draft = (
+                    "[Green-Tape optimizer placeholder]\n\n"
+                    "LLM is not configured; returning previous draft unchanged.\n\n"
+                    f"PROMPT SNIPPET:\n{opt_prompt[:800]}"
+                )
 
     return {
         "context": {
@@ -389,24 +455,7 @@ def run_green_tape_pipeline(
             "user_goal": user_goal,
             "additional_notes": additional_notes,
         },
-        "draft": {
-            "text": draft_result.draft_text,
-            "prompt": draft_result.prompt_used,
-        },
-        "critic": {
-            "raw_text": critic_raw,
-            "parsed": {
-                "summary": critic_feedback.summary,
-                "displacement_risk": critic_feedback.displacement_risk,
-                "affordability_assessment": critic_feedback.affordability_assessment,
-                "local_business_impact": critic_feedback.local_business_impact,
-                "overall_score": critic_feedback.overall_score,
-                "recommendations": critic_feedback.recommendations,
-            },
-        },
-        "optimizer": {
-            "final_draft": optimized_draft_text,
-            "steps": optimization_steps,
-        },
+        "iterations": iterations,
+        "final_draft": current_draft,
+        "final_score": iterations[-1]["critic"]["overall_score"],
     }
-

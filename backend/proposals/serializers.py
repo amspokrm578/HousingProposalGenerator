@@ -208,9 +208,7 @@ class ProposalDetailSerializer(serializers.ModelSerializer):
     owner_username = serializers.CharField(source="owner.username", read_only=True)
     unit_mix = ProposalUnitMixSerializer(many=True, read_only=True)
     financial_projections = FinancialProjectionSerializer(many=True, read_only=True)
-    status_history = ProposalStatusHistorySerializer(
-        many=True, read_only=True, source="status_history"
-    )
+    status_history = ProposalStatusHistorySerializer(many=True, read_only=True)
 
     class Meta:
         model = Proposal
@@ -244,10 +242,11 @@ class GreenTapeRequestSerializer(serializers.Serializer):
 
 class GreenTapeResponseSerializer(serializers.Serializer):
     """
-    Serialized view of the multi-step pipeline suitable for the frontend.
+    Serialized view of the two-agent self-improvement pipeline.
+    iterations: list of {round, draft, critic} dicts — one per review cycle.
     """
 
     context = serializers.DictField()
-    draft = serializers.DictField()
-    critic = serializers.DictField()
-    optimizer = serializers.DictField()
+    iterations = serializers.ListField(child=serializers.DictField())
+    final_draft = serializers.CharField()
+    final_score = serializers.FloatField()

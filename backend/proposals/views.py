@@ -1,15 +1,19 @@
+import requests as http_requests
+
 from django.db.models import Count, Subquery, OuterRef, DecimalField, F, Window
 from django.db.models.functions import Rank
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
+from rest_framework.permissions import AllowAny, IsAuthenticated, IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from django.db.models import Count, Q
 
 from .agents import run_green_tape_pipeline
+from .parcels import fetch_opportunity_parcels
 from .filters import NeighborhoodFilter, ProposalFilter
 from .models import (
     Borough,
@@ -263,3 +267,35 @@ class ProposalViewSet(viewsets.ModelViewSet):
             {"detail": f"Financial projections ({years} years) generation queued."},
             status=status.HTTP_202_ACCEPTED,
         )
+
+
+class ParcelOpportunityView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        try:
+            north = float(request.query_params["north"])
+            south = float(request.query_params["south"])
+            east = float(request.query_params["east"])
+            west = float(request.query_params["west"])
+        except (KeyError, ValueError):
+            return Response(
+                {"detail": "north, south, east, west are required numeric parameters."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if (north - south) > 0.1 or (east - west) > 0.1:
+            return Response(
+                {"detail": "Bounding box too large. Zoom in to see parcels."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            data = fetch_opportunity_parcels(north, south, east, west)
+        except http_requests.RequestException as exc:
+            return Response(
+                {"detail": f"NYC Open Data request failed: {exc}"},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        return Response(data)

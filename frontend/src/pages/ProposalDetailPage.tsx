@@ -18,14 +18,24 @@ const UNIT_TYPE_LABELS: Record<string, string> = {
 
 export default function ProposalDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const { data: proposal, isLoading } = useGetProposalQuery(Number(id), {
+  const { data: proposal, isLoading, isError } = useGetProposalQuery(Number(id), {
     skip: !id,
   });
   const [calcScore, { isLoading: calcLoading }] = useCalculateScoreMutation();
   const [genProjections, { isLoading: projLoading }] =
     useGenerateProjectionsMutation();
 
-  if (isLoading || !proposal) return <LoadingSpinner />;
+  if (isLoading) return <LoadingSpinner />;
+  if (isError || !proposal) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-slate-500">
+        <p className="text-lg font-medium">Could not load proposal.</p>
+        <p className="mt-1 text-sm">
+          Make sure you are signed in and the proposal exists.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">

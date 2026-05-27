@@ -23,9 +23,16 @@ const baseQuery = fetchBaseQuery({
 export const apiSlice = createApi({
   reducerPath: "api",
   baseQuery,
-  tagTypes: ["Proposal", "Neighborhood", "Borough", "Analytics"],
+  tagTypes: ["Proposal", "Neighborhood", "Borough", "Analytics", "Parcels"],
   endpoints: (builder: any) => ({
     // --- Auth / Accounts ---
+    login: builder.mutation({
+      query: (credentials: { username: string; password: string }) => ({
+        url: "auth/token/",
+        method: "POST",
+        body: credentials,
+      }),
+    }),
     getCurrentUser: builder.query({
       query: () => "accounts/me/",
     }),
@@ -70,7 +77,7 @@ export const apiSlice = createApi({
     }),
 
     getNeighborhoodMapData: builder.query({
-      query: () => "neighborhoods/map_data/",
+      query: () => "neighborhoods/map-data/",
       providesTags: ["Neighborhood", "Analytics"],
     }),
 
@@ -181,6 +188,23 @@ export const apiSlice = createApi({
       providesTags: ["Analytics"],
     }),
 
+    // --- Opportunity Parcels ---
+    getOpportunityParcels: builder.query({
+      query: ({
+        north,
+        south,
+        east,
+        west,
+      }: {
+        north: number;
+        south: number;
+        east: number;
+        west: number;
+      }) =>
+        `parcels/opportunity/?north=${north}&south=${south}&east=${east}&west=${west}`,
+      providesTags: ["Parcels"],
+    }),
+
     // --- Green-Tape Agent Pipeline ---
     runGreenTapePipeline: builder.mutation({
       query: (body: {
@@ -199,6 +223,7 @@ export const apiSlice = createApi({
 });
 
 export const {
+  useLoginMutation,
   useGetCurrentUserQuery,
   useGetBoroughsQuery,
   useGetNeighborhoodsQuery,
@@ -214,4 +239,5 @@ export const {
   useGetNeighborhoodRankingsQuery,
   useGetDashboardSummaryQuery,
   useRunGreenTapePipelineMutation,
+  useGetOpportunityParcelsQuery,
 } = apiSlice;

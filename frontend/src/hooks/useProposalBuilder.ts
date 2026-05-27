@@ -20,6 +20,7 @@ type BuilderAction =
   | { type: "ADD_UNIT"; unit: Omit<UnitMix, "id"> }
   | { type: "REMOVE_UNIT"; index: number }
   | { type: "UPDATE_UNIT"; index: number; unit: Omit<UnitMix, "id"> }
+  | { type: "SET_UNIT_MIX"; unitMix: Omit<UnitMix, "id">[] }
   | { type: "SET_ERRORS"; errors: Record<string, string> }
   | { type: "RESET" };
 
@@ -56,6 +57,8 @@ function builderReducer(state: BuilderState, action: BuilderAction): BuilderStat
           i === action.index ? action.unit : u,
         ),
       };
+    case "SET_UNIT_MIX":
+      return { ...state, unitMix: action.unitMix };
     case "SET_ERRORS":
       return { ...state, errors: action.errors };
     case "RESET":

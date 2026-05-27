@@ -188,7 +188,7 @@ export interface GreenTapeRunContext {
   additional_notes: string;
 }
 
-export interface GreenTapeCriticParsed {
+export interface GreenTapeIterationCritic {
   summary: string;
   displacement_risk: string;
   affordability_assessment: string;
@@ -197,26 +197,39 @@ export interface GreenTapeCriticParsed {
   recommendations: string[];
 }
 
-export interface GreenTapeOptimizerStep {
-  iteration: number;
-  optimizer_prompt: string;
-  improved_draft: string;
+export interface GreenTapeIteration {
+  round: number;
+  draft: string;
+  critic: GreenTapeIterationCritic;
 }
 
 export interface GreenTapeRunResult {
   context: GreenTapeRunContext;
-  draft: {
-    text: string;
-    prompt: string;
-  };
-  critic: {
-    raw_text: unknown;
-    parsed: GreenTapeCriticParsed;
-  };
-  optimizer: {
-    final_draft: string;
-    steps: GreenTapeOptimizerStep[];
-  };
+  iterations: GreenTapeIteration[];
+  final_draft: string;
+  final_score: number;
+}
+
+export type ParcelType = "vacant" | "parking" | "underbuilt" | "lowrise";
+
+export interface OpportunityParcel {
+  address: string | null;
+  ownername: string | null;
+  lotarea: string | null;
+  landuse: string | null;
+  bldgclass: string | null;
+  residfar: string | null;
+  builtfar: string | null;
+  numfloors: string | null;
+  zonedist1: string | null;
+  yearbuilt: string | null;
+  borough: string | null;
+  block: string | null;
+  lot: string | null;
+  bbl: string | null;
+  _parcel_type: ParcelType;
+  _lat: number | null;
+  _lng: number | null;
 }
 
 export interface PaginatedResponse<T> {
